@@ -24,7 +24,7 @@ echo "Working directory: $PWD"
 set -x
 
 PACKAGE=yubico-piv-tool
-OPENSSLVERSION=1.1.1f
+OPENSSLVERSION=1.1.1i
 CFLAGS="-mmacosx-version-min=10.6"
 
 echo "OpenSSL version: $OPENSSLVERSION"
@@ -55,20 +55,50 @@ fi
 
 # unpack and install openssl into its remporary root
 tar xfz openssl-$OPENSSLVERSION.tar.gz
-cd openssl-$OPENSSLVERSION
-./Configure darwin64-x86_64-cc shared no-ssl2 no-ssl3 --prefix=$FINAL_INSTALL_DIR $CFLAGS
+
+cp -R openssl-$OPENSSLVERSION openssl-$OPENSSLVERSION-x86_64
+cp -R openssl-$OPENSSLVERSION openssl-$OPENSSLVERSION-arm64
+rm -rf openssl-$OPENSSLVERSION
+# compile each arch first
+# compile x86_64 first
+cd openssl-$OPENSSLVERSION-x86_64
+./Configure darwin64-x86_64-cc shared no-ssl2 no-ssl3 --prefix=$FINAL_INSTALL_DIR-x86_64 $CFLAGS
 make all install_sw VERSION="$OPENSSLVERSION"
 
 # Copy the OpenSSL license to include it in the installer
 cp LICENSE $LICENSE_DIR/openssl.txt
 
-# Removed unused OpenSSL files
-rm -rf $FINAL_INSTALL_DIR/ssl
-rm -rf $FINAL_INSTALL_DIR/bin
-rm -rf $FINAL_INSTALL_DIR/lib/engines*
-rm -rf $FINAL_INSTALL_DIR/lib/libssl*
-rm $FINAL_INSTALL_DIR/lib/pkgconfig/libssl.pc
-rm $FINAL_INSTALL_DIR/lib/pkgconfig/openssl.pc
+# cleanup x86_64
+rm -rf $FINAL_INSTALL_DIR-x86_64/ssl
+rm -rf $FINAL_INSTALL_DIR-x86_64/bin
+rm -rf $FINAL_INSTALL_DIR-x86_64/lib/engines*
+rm -rf $FINAL_INSTALL_DIR-x86_64/lib/libssl*
+rm $FINAL_INSTALL_DIR-x86_64/lib/pkgconfig/libssl.pc
+rm $FINAL_INSTALL_DIR-x86_64/lib/pkgconfig/openssl.pc
+
+# compile arm64 second
+cd $PKG_DIR && cd openssl-$OPENSSLVERSION-arm64
+./Configure darwin64-arm64-cc shared no-ssl2 no-ssl3 --prefix=$FINAL_INSTALL_DIR-arm64 $CFLAGS
+make all install_sw VERSION="$OPENSSLVERSION"
+
+# cleanup arm64
+rm -rf $FINAL_INSTALL_DIR-arm64/ssl
+rm -rf $FINAL_INSTALL_DIR-arm64/bin
+rm -rf $FINAL_INSTALL_DIR-arm64/lib/engines*
+rm -rf $FINAL_INSTALL_DIR-arm64/lib/libssl*
+rm $FINAL_INSTALL_DIR-arm64/lib/pkgconfig/libssl.pc
+rm $FINAL_INSTALL_DIR-arm64/lib/pkgconfig/openssl.pc
+
+mkdir -p $FINAL_INSTALL_DIR/include/openssl
+cp -R $FINAL_INSTALL_DIR-arm64/include/openssl $FINAL_INSTALL_DIR/include/openssl
+
+mkdir -p $FINAL_INSTALL_DIR/lib/pkgconfig/
+cp $FINAL_INSTALL_DIR-arm64/lib/pkgconfig/libcrypto.pc $FINAL_INSTALL_DIR/lib/pkgconfig/libcrypto.pc
+sed -i '' "s|prefix=/.*|prefix=${FINAL_INSTALL_DIR}|g" $FINAL_INSTALL_DIR/lib/pkgconfig/libcrypto.pc
+# combine
+lipo -create $FINAL_INSTALL_DIR-arm64/lib/libcrypto.1.1.dylib $FINAL_INSTALL_DIR-x86_64/lib/libcrypto.1.1.dylib -output $FINAL_INSTALL_DIR/lib/libcrypto.1.1.dylib
+lipo -create $FINAL_INSTALL_DIR-arm64/lib/libcrypto.a $FINAL_INSTALL_DIR-x86_64/lib/libcrypto.a -output $FINAL_INSTALL_DIR/lib/libcrypto.a
+lipo -create $FINAL_INSTALL_DIR-arm64/lib/libcrypto.1.1.dylib $FINAL_INSTALL_DIR-x86_64/lib/libcrypto.1.1.dylib  -output $FINAL_INSTALL_DIR/lib/libcrypto.1.1.dylib
 
 # Build yubico-piv-tool and install it in $INSTALL_DIR
 cd $BUILD_DIR
